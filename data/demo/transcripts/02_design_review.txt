@@ -1,0 +1,16 @@
+Project Atlas — Design Review. June 9th, 2026.
+
+Sarah: Diego, walk us through the wireframes.
+Diego: Here's the dashboard. Top row is the KPIs, the main panel is the trend charts, and the right rail is the segment filters.
+Marcus: Looks clean. One thing — we need dark mode. Half our enterprise users run dark.
+Sarah: Let's make dark mode a launch requirement, not a nice-to-have. Decision.
+Diego: Okay. That means I need to revise the dashboard layout for both themes. I'll have the revised layout by June 18th.
+Sarah: Good, Diego owns the layout revision, June 18th. What about the onboarding tour?
+Priya: Honestly the tour adds a lot of front-end work for little value.
+Sarah: Agreed, let's drop the onboarding tour for launch. Decision made.
+Marcus: On infrastructure — I'll set up the staging environment so we can test against real data. I'll get staging ready by June 20th.
+Sarah: Marcus owns staging, June 20th. Tom, QA planning?
+Tom: I'll draft the QA test plan. Give me until June 30th — I want to cover the dark-mode paths too.
+Sarah: Tom owns the QA test plan, due June 30th. Priya, how's the API contract tracking?
+Priya: On track for the 13th. I'll flag early if anything slips.
+Sarah: Great. One risk to note — if staging slips, QA slips with it. We're chaining those.

@@ -1,0 +1,15 @@
+Project Atlas — Kickoff. June 2nd, 2026.
+
+Sarah: Thanks everyone for joining the Project Atlas kickoff. The goal is to ship the new customer analytics dashboard. Leadership wants us to target a July 15th launch, so let's lock that as our date.
+Marcus: July 15th is tight but doable if we keep scope disciplined.
+Sarah: Agreed. Decision made — July 15th is the launch target. On scope, we use the existing design system, no new component library. Diego, does that work for you?
+Diego: Works for me. I'll have the first wireframes ready by June 9th.
+Sarah: Great, so Diego owns wireframes, due June 9th. Priya, we need the API data contract nailed down early.
+Priya: I can finalize the API data contract by June 13th.
+Sarah: Perfect. Lena, where are we on the churn prediction piece?
+Lena: I need to scope the churn-prediction model properly. I'll have a scoping doc by June 16th.
+Sarah: Good, Lena owns model scoping, June 16th. One more thing — CSV export. I think we descope it for launch.
+Marcus: Agreed, push CSV export to v2. It's not core to launch.
+Sarah: Decision — CSV export moves to v2. And I'll confirm the budget with finance by June 6th so we're not blocked.
+Lena: One risk to flag — the churn model accuracy. The training data is thin right now.
+Sarah: Noted, that's our biggest open risk. Tom, you'll join on QA next sprint. Let's reconvene for design review on the 9th.

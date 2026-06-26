@@ -1,0 +1,14 @@
+Project Atlas — Mid-Sprint Check-in. June 23rd, 2026.
+
+Sarah: Status check. Lena, where's the model?
+Lena: The first results are going to be late. The data pipeline took longer than expected. Realistically I won't have solid numbers until July 8th.
+Sarah: That's a problem. If the model slips to July 8th, a July 15th launch isn't real. Let's push the launch to July 22nd. Decision — the new launch date is July 22nd.
+Marcus: Agreed, July 22nd is more realistic.
+Sarah: Tom, once staging is ready, what's your QA path?
+Tom: I'll run the full regression suite by June 27th.
+Sarah: Tom owns the regression run, June 27th. Diego, what's next after the layout?
+Diego: I'll finalize the empty-state designs by July 3rd.
+Sarah: Diego owns empty-state designs, July 3rd. Priya?
+Priya: There's a pagination bug on the metrics list. I'll fix it, but I can't promise a date yet — still digging into the root cause.
+Sarah: Okay, Priya owns the pagination bug fix, no firm date yet. I'll prep the stakeholder demo for July 7th so leadership sees progress before launch.
+Sarah: One note — we're now fully dependent on the model landing July 8th. That is the critical path for the whole project.

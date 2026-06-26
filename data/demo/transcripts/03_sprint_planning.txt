@@ -1,0 +1,13 @@
+Project Atlas — Sprint Planning. June 16th, 2026.
+
+Sarah: Let's plan the sprint. First, process — I propose we move to two-week sprints for the rest of the project.
+Marcus: Agreed, two-week sprints. Decision.
+Sarah: Good. Priya, you'll own the API end to end from here.
+Priya: Understood, I own the API. First deliverable — I'll implement the /metrics endpoint by June 24th.
+Sarah: Priya owns /metrics, June 24th. Lena, model?
+Lena: Scoping's done. I'll deliver the first churn model results by July 1st.
+Sarah: Lena owns first model results, July 1st. Marcus?
+Marcus: We keep tripping over inconsistent code reviews. I'll write a code-review process doc by June 22nd so we're aligned.
+Sarah: Marcus owns the code-review doc, June 22nd. Diego, layout revision still on for the 18th?
+Diego: Yes, June 18th, on track.
+Sarah: Good. Note for everyone — the model results on July 1st are the long pole. If they slip, the launch slips with them.

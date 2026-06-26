@@ -397,6 +397,36 @@
   }
   .ask-error { color: #fda4af; font-size: .85rem; margin-top: 10px; display: none; }
   .ask-error.visible { display: block; }
+  .ask-hint { font-size: .78rem; color: var(--text-dim); margin: -4px 0 12px; line-height: 1.55; }
+  .ask-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .quick-chip {
+    font-size: .76rem; padding: 5px 12px; border-radius: 20px; cursor: pointer;
+    background: rgba(99,102,241,.08); border: 1px solid var(--card-border);
+    color: var(--text-dim); transition: color .15s, border-color .15s, background .15s;
+  }
+  .quick-chip:hover { color: var(--text); border-color: rgba(129,140,248,.5); background: rgba(99,102,241,.16); }
+  .ask-trace { margin-top: 14px; border-top: 1px dashed var(--card-border); padding-top: 12px; }
+  .ask-trace-title {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--text-dim); margin-bottom: 8px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ask-trace-title .chev { transition: transform .15s; font-size: .7rem; }
+  .ask-trace.collapsed .ask-trace-title .chev { transform: rotate(-90deg); }
+  .ask-trace.collapsed .trace-steps { display: none; }
+  .trace-steps { display: flex; flex-direction: column; gap: 6px; }
+  .trace-step {
+    font-size: .8rem; color: var(--text); display: flex; flex-direction: column; gap: 5px;
+    background: var(--bg-1); border: 1px solid var(--card-border); border-radius: 8px; padding: 7px 10px;
+  }
+  .trace-step-head { display: flex; align-items: baseline; gap: 8px; }
+  .trace-step .n { font-size: .68rem; color: var(--text-dim); min-width: 14px; }
+  .trace-step .detail { color: var(--text-dim); }
+  .trace-result {
+    font-size: .72rem; color: var(--text-dim); white-space: pre-wrap;
+    background: var(--card); border-radius: 6px; padding: 6px 8px; margin-left: 22px;
+    max-height: 80px; overflow: hidden; line-height: 1.4;
+  }
 
 
   /* summ detail modal */
@@ -565,21 +595,36 @@
       </div>
       <div class="timeline" id="summ-list"></div>
 
-      <!-- RAG ask panel -->
+      <!-- Agentic ask panel -->
       <div class="ask-panel" id="ask-panel">
-        <div class="ask-panel-title">Ask about this project</div>
+        <div class="ask-panel-title">Ask the project agent</div>
+        <div class="ask-hint">
+          A tool-using agent that searches your meetings, lists and chases action items, finds overdue tasks, and drafts recaps — grounded in this project, with sources.
+        </div>
         <div class="ask-row">
           <input
             class="ask-input" id="ask-input"
             type="text"
-            placeholder="e.g. What did we decide about the budget? Who owns the design task?"
+            placeholder="e.g. What's overdue? Who owns the design task? Draft a recap of the kickoff."
             autocomplete="off"
           />
           <button class="ask-btn" id="ask-btn">Ask</button>
         </div>
+        <div class="ask-quick" id="ask-quick">
+          <span class="quick-chip" data-q="What action items are overdue?">⏰ What's overdue?</span>
+          <span class="quick-chip" data-q="List all action items and who owns them.">✅ Action items</span>
+          <span class="quick-chip" data-q="What decisions have we made across all meetings?">📌 Decisions</span>
+          <span class="quick-chip" data-q="Draft a follow-up recap for the most recent meeting.">✉️ Draft a recap</span>
+        </div>
         <div class="ask-error" id="ask-error"></div>
         <div class="ask-answer" id="ask-answer">
           <div class="ask-answer-text" id="ask-answer-text"></div>
+          <div class="ask-trace collapsed" id="ask-trace" style="display:none">
+            <div class="ask-trace-title" id="ask-trace-title">
+              <span class="chev">▾</span> How the agent answered <span id="ask-steps-inline"></span>
+            </div>
+            <div class="trace-steps" id="ask-trace-steps"></div>
+          </div>
           <div class="ask-sources" id="ask-sources"></div>
         </div>
       </div>
@@ -718,9 +763,34 @@ function showSummarizer() {
 }
 
 
-// ── RAG: Ask panel ────────────────────────────────────────────────────────────
-async function askProject() {
-  const question = $("ask-input").value.trim();
+// ── Agentic ask panel ─────────────────────────────────────────────────────────
+const TOOL_LABELS = {
+  list_meetings:             () => ["📋", "Listed all meetings", ""],
+  search_meetings:           i  => ["🔍", "Searched meetings", i.query ? `“${i.query}”` : ""],
+  list_action_items:         i  => ["✅", "Listed action items", i.owner ? `owner: ${i.owner}` : "all owners"],
+  find_overdue_action_items: i  => ["⏰", "Checked overdue items", i.as_of_date ? `as of ${i.as_of_date}` : "as of today"],
+  draft_followup:            i  => ["✉️", "Drafted a recap", i.meeting_title ? `“${i.meeting_title}”` : ""],
+};
+
+function renderTrace(trace, steps) {
+  const wrap = $("ask-trace");
+  const stepsEl = $("ask-trace-steps");
+  if (!trace || !trace.length) { wrap.style.display = "none"; return; }
+  stepsEl.innerHTML = trace.map((t, idx) => {
+    const fn = TOOL_LABELS[t.tool] || (() => ["🛠", t.tool, ""]);
+    const [icon, label, detail] = fn(t.input || {});
+    const head = `<div class="trace-step-head"><span class="n">${idx + 1}</span><span>${icon} ${escHtml(label)}</span>${detail ? `<span class="detail">${escHtml(detail)}</span>` : ""}</div>`;
+    const preview = t.result ? `<div class="trace-result">${escHtml(t.result.length > 260 ? t.result.slice(0, 260) + "…" : t.result)}</div>` : "";
+    return `<div class="trace-step">${head}${preview}</div>`;
+  }).join("");
+  $("ask-steps-inline").textContent = steps ? `· ${steps} step${steps > 1 ? "s" : ""}` : "";
+  wrap.style.display = "block";
+}
+
+async function askProject(presetQuestion) {
+  const input = $("ask-input");
+  if (presetQuestion) input.value = presetQuestion;
+  const question = input.value.trim();
   if (!question || !activeProjectId) return;
 
   const btn = $("ask-btn");
@@ -738,7 +808,7 @@ async function askProject() {
     const res = await fetch(`/api/projects/${activeProjectId}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, top_k: 3 }),
+      body: JSON.stringify({ question }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -747,9 +817,11 @@ async function askProject() {
     const data = await res.json();
 
     answerText.textContent = data.answer;
+    renderTrace(data.trace, data.steps);
     sourcesEl.innerHTML = (data.sources || []).map(s => {
       const date = s.created_at ? new Date(s.created_at).toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" }) : "";
-      return `<span class="ask-source-chip" title="similarity: ${s.similarity}">${escHtml(s.meeting_title)}${date ? " · " + date : ""}</span>`;
+      const title = (s.similarity != null) ? ` title="similarity: ${s.similarity}"` : "";
+      return `<span class="ask-source-chip"${title}>${escHtml(s.meeting_title)}${date ? " · " + date : ""}</span>`;
     }).join("");
     answerBox.classList.add("visible");
   } catch (err) {
@@ -761,8 +833,13 @@ async function askProject() {
   }
 }
 
-$("ask-btn").onclick = askProject;
+$("ask-btn").onclick = () => askProject();
 $("ask-input").addEventListener("keydown", e => { if (e.key === "Enter") askProject(); });
+$("ask-quick").addEventListener("click", e => {
+  const chip = e.target.closest(".quick-chip");
+  if (chip) askProject(chip.dataset.q);
+});
+$("ask-trace-title").addEventListener("click", () => $("ask-trace").classList.toggle("collapsed"));
 
 $("back-btn").onclick = showSummarizer;
 

@@ -11,7 +11,9 @@ returns a grounded answer with source citations drawn from past meetings.
 
 import json
 import os
+import re
 import tempfile
+from datetime import date, datetime
 from pathlib import Path
 
 import anthropic
@@ -181,8 +183,15 @@ def sb(method: str, path: str, **kwargs):
 
 # ── RAG helpers ───────────────────────────────────────────────────────────────
 
-def embed(text: str) -> list[float]:
-    """Embed text using Gemini embedding-001 (truncated to 1536 dims for pgvector compatibility)."""
+def embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list[float]:
+    """Embed text with Gemini embedding-001 (1536 dims for pgvector).
+
+    task_type makes the embeddings *asymmetric*: documents are embedded with
+    RETRIEVAL_DOCUMENT (at save time) and questions with RETRIEVAL_QUERY (at
+    search time). Gemini optimises the two roles differently, so using the
+    correct task type for each measurably improves retrieval ranking over
+    embedding both with a single task type.
+    """
     from google import genai
     from google.genai import types
     gemini_key = os.environ.get("GEMINI_API_KEY")
@@ -195,7 +204,10 @@ def embed(text: str) -> list[float]:
     result = client.models.embed_content(
         model="gemini-embedding-001",
         contents=text,
-        config=types.EmbedContentConfig(output_dimensionality=1536),
+        config=types.EmbedContentConfig(
+            output_dimensionality=1536,
+            task_type=task_type,
+        ),
     )
     return result.embeddings[0].values
 
@@ -282,6 +294,413 @@ def generate_answer(question: str, context_meetings: list[dict]) -> dict:
         for m in context_meetings
     ]
     return {"answer": answer_text, "sources": sources}
+
+
+# ── Agentic meeting assistant ─────────────────────────────────────────────────
+# A SINGLE tool-using agent. Given a question about a project, it decides which
+# tools to call (semantic search, list meetings, list/overdue action items, draft
+# a recap), reads the results, and loops — up to MAX_AGENT_STEPS — before
+# answering. project_id is bound server-side into every tool, so the model can
+# never reach another project's data (a built-in access guardrail). "Specialist"
+# behaviour (drafting a recap) is exposed as a TOOL, not a second agent, to keep
+# the mental model simple: one agent, one loop, a toolbox, a step cap.
+
+MAX_AGENT_STEPS = 5        # hard cap on tool-use rounds → prevents infinite agent loops
+MAX_QUESTION_CHARS = 2_000  # input guardrail on the user's question
+
+AGENT_SYSTEM_PROMPT = """\
+You are SummarAI's meeting assistant for ONE project. Today's date is {today}.
+
+You help the user reason over the meetings saved in this project — their
+summaries, decisions, notes, and action items. You have tools to: list every
+meeting, search meetings semantically, list action items, find overdue action
+items, and draft a follow-up recap.
+
+How to work:
+- Decide which tool(s) answer the question, call them, then read the results.
+- Base every factual claim ONLY on what the tools return. Never invent
+  meetings, owners, deadlines, decisions, or numbers.
+- Cite the meeting title(s) you used. If the tools return nothing relevant,
+  say so plainly — do not guess or fall back on outside knowledge.
+- Be efficient: don't call more tools than you need. As soon as you can answer,
+  answer."""
+
+
+AGENT_TOOLS = [
+    {
+        "name": "list_meetings",
+        "description": (
+            "List every meeting saved in this project (title, date, one-line "
+            "summary). Use for an overview, for counting meetings, or when the "
+            "user names no specific topic."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "search_meetings",
+        "description": (
+            "Semantic search over this project's meetings. Returns the most "
+            "relevant meetings with full summary, key takeaways, and action "
+            "items. Use when the user asks about a topic, decision, or detail."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to look for, in natural language."},
+                "top_k": {"type": "integer", "description": "How many meetings to retrieve (1-5). Default 3."},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_action_items",
+        "description": (
+            "List action items across all meetings in this project, optionally "
+            "filtered by owner. Each item has task, owner, deadline, and the "
+            "meeting it came from."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "owner": {
+                    "type": "string",
+                    "description": "Filter to a person's name (case-insensitive). Use 'unassigned' for items with no owner. Omit for all.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "find_overdue_action_items",
+        "description": (
+            "Return action items whose stated deadline is before a date "
+            "(default: today). Items with no deadline, or a deadline that can't "
+            "be parsed, are reported separately — never counted as overdue."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {"type": "string", "description": "ISO date YYYY-MM-DD to compare against. Defaults to today."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "draft_followup",
+        "description": (
+            "Draft a short, professional follow-up recap email for a specific "
+            "meeting (one-line summary, decisions, action items with owners and "
+            "deadlines). Provide the meeting title; best match is used."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "meeting_title": {"type": "string", "description": "The meeting to recap (matched by title)."},
+            },
+            "required": ["meeting_title"],
+            "additionalProperties": False,
+        },
+    },
+]
+
+
+# ── Tool helpers ──────────────────────────────────────────────────────────────
+
+def _as_list(value):
+    """key_takeaways / action_items come back as a JSON list (jsonb) or a JSON
+    string depending on the path — normalise both to a Python list."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    return value
+
+
+def _project_summarizations(project_id: str) -> list[dict]:
+    rows = sb(
+        "GET",
+        f"summarizations?project_id=eq.{project_id}"
+        "&select=id,meeting_title,summary,key_takeaways,action_items,created_at"
+        "&order=created_at.desc",
+    )
+    for r in rows:
+        r["key_takeaways"] = _as_list(r.get("key_takeaways"))
+        r["action_items"] = _as_list(r.get("action_items"))
+    return rows
+
+
+def _source(m: dict) -> dict:
+    src = {
+        "id": m["id"],
+        "meeting_title": m.get("meeting_title", ""),
+        "created_at": m.get("created_at", ""),
+    }
+    if "similarity" in m and m["similarity"] is not None:
+        src["similarity"] = round(m["similarity"], 3)
+    return src
+
+
+def _flatten_actions(rows: list[dict]) -> list[dict]:
+    out = []
+    for r in rows:
+        for a in r.get("action_items", []):
+            out.append({
+                "task": a.get("task", ""),
+                "owner": a.get("owner"),
+                "deadline": a.get("deadline"),
+                "meeting_title": r.get("meeting_title", ""),
+                "meeting_date": (r.get("created_at") or "")[:10],
+            })
+    return out
+
+
+# Formats tried after stripping ordinal suffixes and commas (e.g. "June 18th,
+# 2026" → "June 18 2026"). A deadline with no year defaults to the current year.
+_DATE_FORMATS = (
+    "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d",
+    "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y",
+    "%B %d", "%b %d", "%d %B", "%d %b",
+)
+_ORDINAL_RE = re.compile(r"(\d{1,2})(st|nd|rd|th)\b", re.IGNORECASE)
+
+
+def _parse_date(s):
+    """Best-effort parse of a free-text deadline → a date, or None.
+
+    Handles ISO dates and natural phrasings the summariser emits ("June 18",
+    "June 18th, 2026", "18 June", "06/18/2026"). Anything genuinely relative
+    ("next Friday", "after lunch", "30 minutes") returns None and is reported
+    as *unparseable* rather than silently treated as overdue.
+    """
+    if not s or not isinstance(s, str):
+        return None
+    cleaned = _ORDINAL_RE.sub(r"\1", s.strip()).replace(",", " ")
+    cleaned = " ".join(cleaned.split())  # collapse whitespace
+    try:
+        return date.fromisoformat(cleaned[:10])
+    except ValueError:
+        pass
+    for fmt in _DATE_FORMATS:
+        try:
+            d = datetime.strptime(cleaned, fmt)
+            if d.year == 1900:  # formats without a year default to 1900
+                d = d.replace(year=date.today().year)
+            return d.date()
+        except ValueError:
+            continue
+    return None
+
+
+# ── Tool implementations (each returns (text_for_model, sources)) ─────────────
+
+def tool_list_meetings(project_id: str):
+    rows = _project_summarizations(project_id)
+    if not rows:
+        return ("No meetings have been saved to this project yet.", [])
+    lines = [
+        f'- "{r["meeting_title"]}" ({(r.get("created_at") or "")[:10]}): {r.get("summary", "")}'
+        for r in rows
+    ]
+    return (f"{len(rows)} meeting(s) in this project:\n" + "\n".join(lines),
+            [_source(r) for r in rows])
+
+
+def tool_search_meetings(project_id: str, query: str, top_k: int = 3):
+    top_k = max(1, min(int(top_k or 3), 5))
+    try:
+        qvec = embed(query, task_type="RETRIEVAL_QUERY")
+    except HTTPException as exc:
+        return (f"Semantic search is unavailable ({exc.detail}). Try list_meetings instead.", [])
+    matches = retrieve(project_id, qvec, top_k=top_k)
+    if not matches:
+        return ("No meetings matched that query.", [])
+    parts = []
+    for i, m in enumerate(matches, 1):
+        parts.append(
+            f'[{i}] "{m["meeting_title"]}" — {(m.get("created_at") or "")[:10]} '
+            f'(similarity {round(m.get("similarity", 0), 3)})\n'
+            f'Summary: {m.get("summary", "")}\n'
+            f'Key takeaways: {json.dumps(_as_list(m.get("key_takeaways")), ensure_ascii=False)}\n'
+            f'Action items: {json.dumps(_as_list(m.get("action_items")), ensure_ascii=False)}'
+        )
+    return ("\n\n".join(parts), [_source(m) for m in matches])
+
+
+def tool_list_action_items(project_id: str, owner: str | None = None):
+    rows = _project_summarizations(project_id)
+    actions = _flatten_actions(rows)
+    if owner:
+        o = owner.strip().lower()
+        if o in ("unassigned", "none", "nobody", "null", "no owner"):
+            actions = [a for a in actions if not a["owner"]]
+        else:
+            actions = [a for a in actions if a["owner"] and o in a["owner"].lower()]
+    if not actions:
+        return ("No matching action items found.", [])
+    lines = [
+        f'- {a["task"]} | owner: {a["owner"] or "unassigned"} | '
+        f'deadline: {a["deadline"] or "none"} | from "{a["meeting_title"]}" ({a["meeting_date"]})'
+        for a in actions
+    ]
+    srcs = {r["id"]: _source(r) for r in rows if r.get("action_items")}
+    return (f"{len(actions)} action item(s):\n" + "\n".join(lines), list(srcs.values()))
+
+
+def tool_find_overdue_action_items(project_id: str, as_of_date: str | None = None):
+    rows = _project_summarizations(project_id)
+    actions = _flatten_actions(rows)
+    as_of = _parse_date(as_of_date) or date.today()
+    overdue, unparseable = [], []
+    for a in actions:
+        if not a["deadline"]:
+            continue
+        d = _parse_date(a["deadline"])
+        if d is None:
+            unparseable.append(a)
+        elif d < as_of:
+            overdue.append((d, a))
+    overdue.sort(key=lambda x: x[0])
+    parts = [f"As of {as_of.isoformat()}:"]
+    if overdue:
+        parts.append(f"OVERDUE ({len(overdue)}):")
+        parts += [
+            f'- {a["task"]} | owner: {a["owner"] or "unassigned"} | '
+            f'due {d.isoformat()} | from "{a["meeting_title"]}"'
+            for d, a in overdue
+        ]
+    else:
+        parts.append("No overdue action items with parseable deadlines.")
+    if unparseable:
+        parts.append(
+            f"Deadline stated but not parseable ({len(unparseable)}): "
+            + "; ".join(f'{a["task"]} ("{a["deadline"]}")' for a in unparseable)
+        )
+    return ("\n".join(parts), [_source(r) for r in rows if r.get("action_items")])
+
+
+def tool_draft_followup(project_id: str, meeting_title: str):
+    rows = _project_summarizations(project_id)
+    if not rows:
+        return ("No meetings are saved in this project to draft from.", [])
+    needle = (meeting_title or "").strip().lower()
+    match = next((r for r in rows if needle and needle in r.get("meeting_title", "").lower()), None)
+    if match is None:  # fall back to semantic best-match
+        try:
+            qvec = embed(meeting_title, task_type="RETRIEVAL_QUERY")
+            ms = retrieve(project_id, qvec, top_k=1)
+            if ms:
+                match = next((r for r in rows if r["id"] == ms[0]["id"]), None)
+        except HTTPException:
+            pass
+    if match is None:
+        match = rows[0]
+    context = (
+        f'Meeting: {match["meeting_title"]} ({(match.get("created_at") or "")[:10]})\n'
+        f'Summary: {match.get("summary", "")}\n'
+        f'Key takeaways: {json.dumps(match.get("key_takeaways", []), ensure_ascii=False)}\n'
+        f'Action items: {json.dumps(match.get("action_items", []), ensure_ascii=False)}'
+    )
+    client = anthropic.Anthropic()
+    resp = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=600,
+        system=(
+            "You draft a concise, professional follow-up recap email from a "
+            "meeting record. Use ONLY the given facts — never invent owners or "
+            "deadlines. Include a one-line summary, the key decisions, and a "
+            "clear action-item list with owners and deadlines. Under 200 words."
+        ),
+        messages=[{"role": "user", "content": context}],
+    )
+    draft = "".join(b.text for b in resp.content if b.type == "text")
+    return (f'Draft follow-up for "{match["meeting_title"]}":\n\n{draft}', [_source(match)])
+
+
+_TOOL_IMPLS = {
+    "list_meetings": tool_list_meetings,
+    "search_meetings": tool_search_meetings,
+    "list_action_items": tool_list_action_items,
+    "find_overdue_action_items": tool_find_overdue_action_items,
+    "draft_followup": tool_draft_followup,
+}
+
+
+def run_agent(question: str, project_id: str) -> dict:
+    """Run the single tool-using agent loop, bounded by MAX_AGENT_STEPS.
+
+    project_id is bound into every tool call here, so the model supplies only
+    semantic arguments and can never query another project.
+    """
+    client = anthropic.Anthropic()
+    system = AGENT_SYSTEM_PROMPT.format(today=date.today().isoformat())
+    messages = [{"role": "user", "content": question}]
+    trace: list[dict] = []
+    sources: dict[str, dict] = {}
+
+    for step in range(1, MAX_AGENT_STEPS + 1):
+        resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=1500,
+            system=system,
+            tools=AGENT_TOOLS,
+            messages=messages,
+        )
+        if resp.stop_reason != "tool_use":
+            answer = "".join(b.text for b in resp.content if b.type == "text")
+            return {
+                "answer": answer,
+                "sources": list(sources.values()),
+                "trace": trace,
+                "steps": step,
+                "hit_cap": False,
+            }
+
+        # Execute every tool the model requested this round.
+        messages.append({"role": "assistant", "content": resp.content})
+        tool_results = []
+        for block in resp.content:
+            if block.type != "tool_use":
+                continue
+            impl = _TOOL_IMPLS.get(block.name)
+            if impl is None:
+                text, srcs = (f"Unknown tool '{block.name}'.", [])
+            else:
+                try:
+                    text, srcs = impl(project_id, **block.input)
+                except Exception as exc:  # noqa: BLE001 — surface tool errors to the model
+                    text, srcs = (f"Tool error: {exc}", [])
+            trace.append({"tool": block.name, "input": block.input, "result": text[:1500]})
+            for s in srcs:
+                sources[s["id"]] = s
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": text,
+            })
+        messages.append({"role": "user", "content": tool_results})
+
+    # Step cap reached → force a final answer with NO further tools.
+    final = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=1500,
+        system=system + (
+            "\n\nYou have reached the tool-call limit. Give your best answer now "
+            "using only what the tools already returned. Do not request more tools."
+        ),
+        messages=messages,
+    )
+    answer = "".join(b.text for b in final.content if b.type == "text")
+    return {
+        "answer": answer,
+        "sources": list(sources.values()),
+        "trace": trace,
+        "steps": MAX_AGENT_STEPS,
+        "hit_cap": True,
+    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -428,37 +847,27 @@ class AskBody(BaseModel):
 
 @app.post("/api/projects/{project_id}/ask")
 def ask_project(project_id: str, body: AskBody):
-    """
-    RAG endpoint: embed the question, retrieve the top-k most semantically
-    similar past summarizations for this project, and generate a grounded
-    answer using Claude.
+    """Agentic endpoint. A single tool-using agent answers questions about this
+    project's meetings: it chooses among semantic search, meeting listing,
+    action-item, overdue, and draft-recap tools, observes the results, and loops
+    (capped at MAX_AGENT_STEPS) before producing a grounded, cited answer.
 
     Returns:
-        answer  — Claude's response grounded in retrieved meetings
-        sources — list of meetings cited (id, title, date, similarity score)
+        answer   — the agent's grounded response
+        sources  — meetings cited (id, title, date, similarity when available)
+        trace    — the tool calls the agent made (for transparency / the demo)
+        steps    — how many reasoning rounds it used
     """
-    if not body.question.strip():
+    q = body.question.strip()
+    if not q:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
-
-    # 1. Embed the question (truncated to 1536 dims to match database column)
-    from google import genai
-    from google.genai import types
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if not gemini_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set.")
-    client = genai.Client(api_key=gemini_key)
-    query_result = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=body.question,
-        config=types.EmbedContentConfig(output_dimensionality=1536),
-    )
-    query_vector = query_result.embeddings[0].values
-
-    # 2. Retrieve top-k relevant meetings from Supabase via pgvector
-    matches = retrieve(project_id, query_vector, top_k=body.top_k)
-
-    # 3. Generate a grounded answer with Claude
-    result = generate_answer(body.question, matches)
-    return result
+    if len(q) > MAX_QUESTION_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Question is too long (max {MAX_QUESTION_CHARS} characters).",
+        )
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY is not set.")
+    return run_agent(q, project_id)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
