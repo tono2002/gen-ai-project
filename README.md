@@ -179,8 +179,4 @@ If you saved meetings before applying step 2/3 (or before `GEMINI_API_KEY` was s
 - **The agent requires saved meetings.** The Ask panel only returns answers once meetings have been saved to a project. Meetings saved before the agent/RAG migration was applied can be back-filled using `embed_existing.py`.
 - **Single agent, by design.** The agent uses one Claude loop with a fixed toolbox rather than multiple autonomous agents — this keeps behaviour explainable and avoids inter-agent coordination failures, at the cost of not parallelising independent sub-tasks.
 
-## Team
 
-Antonio · Martí · Bojana · Smaragda · Jo
-
-Generative AI Group Assignment — Final MVP.
