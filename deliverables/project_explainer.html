@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SummarAI — Project Explainer &amp; Rubric Mapping</title>
+<style>
+  :root {
+    --bg-0: #0a0a1f; --bg-1: #11122e; --bg-2: #1a1b45;
+    --indigo: #4f46e5; --indigo-bright: #6366f1; --violet: #8b5cf6; --glow: #818cf8;
+    --text: #e2e4f5; --text-dim: #9395b8;
+    --card: rgba(99, 102, 241, 0.06); --card-border: rgba(129, 140, 248, 0.18);
+    --ok: #34d399; --warn: #fbbf24; --code-bg: #0d0e24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: radial-gradient(circle at 20% -10%, var(--bg-2), var(--bg-0) 60%);
+    color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { text-align: center; margin-bottom: 56px; }
+  header h1 {
+    font-size: 2.4rem; margin: 0 0 8px; background: linear-gradient(135deg, var(--indigo-bright), var(--violet));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  header p { color: var(--text-dim); font-size: 1.05rem; margin: 0; }
+  nav {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 28px;
+  }
+  nav a {
+    font-size: .82rem; color: var(--glow); text-decoration: none; border: 1px solid var(--card-border);
+    border-radius: 20px; padding: 6px 14px; background: var(--card); transition: border-color .2s;
+  }
+  nav a:hover { border-color: rgba(129,140,248,.6); }
+
+  section { margin-bottom: 56px; }
+  h2 {
+    font-size: 1.5rem; margin: 0 0 6px; padding-bottom: 12px; border-bottom: 1px solid var(--card-border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .tag {
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--bg-0);
+    background: var(--glow); border-radius: 6px; padding: 3px 8px; font-weight: 700;
+  }
+  h3 { font-size: 1.1rem; color: var(--glow); margin: 28px 0 10px; }
+  p { color: var(--text); }
+  .dim { color: var(--text-dim); }
+
+  .card {
+    background: var(--card); border: 1px solid var(--card-border); border-radius: 14px;
+    padding: 20px 24px; margin: 16px 0;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: .92rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--card-border); vertical-align: top; }
+  th { color: var(--glow); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block; font-size: .72rem; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+  }
+  .badge.met { background: rgba(52,211,153,.15); color: var(--ok); border: 1px solid rgba(52,211,153,.35); }
+
+  pre {
+    background: var(--code-bg); border: 1px solid var(--card-border); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font-size: .82rem; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em;
+    background: var(--code-bg); padding: 2px 6px; border-radius: 5px; color: #a5b4fc;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+  .kw { color: #818cf8; } .str { color: #6ee7b7; } .com { color: var(--text-dim); font-style: italic; }
+
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 0;
+    font-size: .85rem;
+  }
+  .flow .step {
+    background: var(--bg-1); border: 1px solid var(--card-border); border-radius: 10px;
+    padding: 8px 14px; white-space: nowrap;
+  }
+  .flow .arrow { color: var(--text-dim); }
+
+  .qa {
+    border-left: 3px solid var(--indigo-bright); padding: 4px 0 4px 16px; margin: 14px 0;
+  }
+  .qa .q { font-weight: 600; color: var(--glow); margin-bottom: 4px; }
+  .qa .a { color: var(--text); font-size: .94rem; }
+
+  ul, ol { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+
+  footer { text-align: center; color: var(--text-dim); font-size: .82rem; margin-top: 64px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>SummarAI</h1>
+    <p>A meeting-summarisation app with a single tool-using agent for cross-meeting Q&amp;A.<br>
+    Built for the Generative AI final project — this page explains the whole thing, end to end.</p>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#agent">The Agent</a>
+      <a href="#guardrails">Guardrails</a>
+      <a href="#evaluation">Evaluation</a>
+      <a href="#business">Business Case</a>
+      <a href="#rubric">Rubric Mapping</a>
+      <a href="#qa">Anticipated Q&amp;A</a>
+    </nav>
+  </header>
+
+  <section id="overview">
+    <h2>1. What the project is</h2>
+    <p>
+      SummarAI turns a raw meeting recording (or a pasted transcript) into three things: a
+      two-sentence <strong>summary</strong>, a list of typed <strong>key takeaways</strong>
+      (tagged <code>decision</code> or <code>note</code>), and a list of
+      <strong>action items</strong> with owner and deadline when stated. Results can be saved
+      into <strong>projects</strong>, building a searchable history of everything a team has
+      decided across many meetings.
+    </p>
+    <p>
+      The part built specifically for this course is the <strong>agent layer</strong>: once a
+      project has saved meetings, a user can ask a natural-language question — "what's
+      overdue?", "who owns the design task?", "draft a recap" — and a single Claude agent
+      answers it by calling tools over the meeting archive, never by guessing.
+    </p>
+    <div class="card">
+      <strong>The business problem this solves:</strong> knowledge workers lose hours every week
+      re-reading old meeting notes to answer questions like "did we already decide this?" or
+      "who still owes me that deliverable?". SummarAI keeps that institutional memory queryable
+      instead of buried in a folder of past summaries.
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>2. Architecture <span class="tag">Technical Depth</span></h2>
+    <p>The system has two layers that run at different times.</p>
+
+    <h3>2.1 Core pipeline (runs on every upload)</h3>
+    <div class="flow">
+      <div class="step">Audio / video file</div><span class="arrow">→</span>
+      <div class="step">faster-whisper (local, CPU)</div><span class="arrow">→</span>
+      <div class="step">Transcript</div><span class="arrow">→</span>
+      <div class="step">Claude Haiku 4.5 + JSON schema</div><span class="arrow">→</span>
+      <div class="step">Summary / takeaways / action items</div>
+    </div>
+    <p class="dim">If the user uploads a text transcript instead of audio, the Whisper step is skipped entirely.</p>
+    <p>The key design choice here is <strong>structured output</strong>: instead of asking Claude
+      for free text and parsing it with regex (fragile), the API call is given a strict JSON
+      schema, so the response is guaranteed to be valid, typed data every time.</p>
+    <pre><code><span class="com"># src/app.py — the core extraction call</span>
+response = client.messages.create(
+    model=<span class="str">"claude-haiku-4-5"</span>,
+    max_tokens=8192,
+    system=SYSTEM_PROMPT,
+    messages=[{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: f<span class="str">"&lt;transcript&gt;\n{transcript}\n&lt;/transcript&gt;"</span>}],
+    output_config={<span class="str">"format"</span>: {<span class="str">"type"</span>: <span class="str">"json_schema"</span>, <span class="str">"schema"</span>: OUTPUT_SCHEMA}},
+)</code></pre>
+
+    <h3>2.2 Persistence and embeddings</h3>
+    <p>When a summary is saved to a project, it's written to <strong>Supabase</strong> (Postgres)
+      and simultaneously flattened to text and embedded with <strong>Gemini
+      <code>embedding-001</code></strong> (1536 dimensions, matching the <code>pgvector</code>
+      column). The embedding is what makes the meeting findable later by the agent's
+      <code>search_meetings</code> tool.</p>
+    <pre><code>create table summarizations (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects(id),
+  meeting_title text, summary text,
+  key_takeaways jsonb, action_items jsonb,
+  embedding vector(1536),  <span class="com">-- pgvector column</span>
+  created_at timestamptz default now()
+);
+
+create function match_summarizations(
+  query_embedding vector(1536), match_project_id uuid, match_count int
+) returns table (..., similarity float)
+language sql stable as $$
+  select *, 1 - (embedding &lt;=&gt; query_embedding) as similarity
+  from summarizations
+  where project_id = match_project_id
+  order by embedding &lt;=&gt; query_embedding
+  limit match_count;
+$$;</code></pre>
+    <p class="dim"><code>&lt;=&gt;</code> is pgvector's cosine-distance operator — smaller distance
+      means more similar, so <code>1 - distance</code> gives a similarity score from 0 to 1.</p>
+  </section>
+
+  <section id="agent">
+    <h2>3. The agent <span class="tag">Technical Depth — Agentic Architecture</span></h2>
+    <p>
+      <code>POST /api/projects/{project_id}/ask</code> is powered by <code>run_agent()</code> in
+      <code>src/app.py</code>. This is deliberately a <strong>single tool-using agent</strong>,
+      not a multi-agent system.
+    </p>
+    <div class="card">
+      <strong>Why single-agent, not multi-agent?</strong> Multi-agent orchestration adds
+      coordination overhead and failure modes (agents disagreeing, hand-off loops) that are hard
+      to defend live in a demo or explain in Q&amp;A. Every capability we need — search, lookup,
+      listing, drafting — fits as <em>a tool the one agent calls</em>, not a separate autonomous
+      agent. The mental model stays simple: one agent, one loop, a fixed toolbox, a step cap.
+    </div>
+
+    <h3>3.1 The loop</h3>
+    <div class="flow">
+      <div class="step">User question</div><span class="arrow">→</span>
+      <div class="step">Claude + 5 tool definitions</div><span class="arrow">→</span>
+      <div class="step">tool_use?</div><span class="arrow">→</span>
+      <div class="step">backend executes tool</div><span class="arrow">→</span>
+      <div class="step">result fed back</div><span class="arrow">→</span>
+      <div class="step">repeat (≤5×)</div><span class="arrow">→</span>
+      <div class="step">final grounded answer</div>
+    </div>
+    <pre><code><span class="kw">def</span> run_agent(question, project_id):
+    messages = [{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: question}]
+    trace = []
+    <span class="kw">for</span> step <span class="kw">in</span> range(MAX_AGENT_STEPS):       <span class="com"># guardrail: hard step cap</span>
+        response = client.messages.create(
+            model=<span class="str">"claude-haiku-4-5"</span>, system=AGENT_SYSTEM_PROMPT,
+            tools=AGENT_TOOLS, messages=messages,
+        )
+        <span class="kw">if</span> response.stop_reason != <span class="str">"tool_use"</span>:
+            <span class="kw">return</span> {<span class="str">"answer"</span>: ..., <span class="str">"sources"</span>: ..., <span class="str">"trace"</span>: trace}  <span class="com"># done</span>
+
+        <span class="com"># Claude asked for a tool — run it, append result, loop again</span>
+        <span class="kw">for</span> block <span class="kw">in</span> response.content:
+            <span class="kw">if</span> block.type == <span class="str">"tool_use"</span>:
+                result = AGENT_TOOL_IMPLS[block.name](project_id, block.input)
+                trace.append({<span class="str">"tool"</span>: block.name, <span class="str">"input"</span>: block.input, <span class="str">"output"</span>: result})
+                ...</code></pre>
+
+    <h3>3.2 The five tools</h3>
+    <table>
+      <tr><th>Tool</th><th>What it does</th><th>Backed by</th></tr>
+      <tr><td><code>search_meetings</code></td><td>Semantic search over the project's saved meetings</td><td>Gemini embed + pgvector cosine search</td></tr>
+      <tr><td><code>get_meeting</code></td><td>Full record for one meeting by id</td><td>Supabase row fetch</td></tr>
+      <tr><td><code>list_action_items</code></td><td>All action items in the project, optionally filtered by owner</td><td>Scan over saved <code>action_items</code> JSON</td></tr>
+      <tr><td><code>find_overdue_action_items</code></td><td>Action items whose deadline is a parseable past date</td><td>ISO date parsing — vague deadlines ("next meeting") are skipped, never assumed overdue</td></tr>
+      <tr><td><code>draft_followup</code></td><td>Drafts a short recap email for one meeting</td><td>A second, bounded Claude call — a <em>tool</em>, not a second agent</td></tr>
+    </table>
+    <p>Almost every tool reuses an existing function (<code>embed()</code>, <code>retrieve()</code>,
+      <code>sb()</code>) — the agent is mostly orchestration on top of code that already
+      existed, not a parallel system.</p>
+
+    <h3>3.3 What the user sees</h3>
+    <p>The frontend's <strong>"Ask the meeting agent"</strong> panel has quick-action chips
+      ("What's overdue?", "What did we decide?", "Draft a recap") and renders a collapsible
+      <strong>tool-call trace</strong> below the answer — exactly what tools fired, with what
+      arguments. This is what you'd open live in the demo to prove the agent isn't just calling
+      one RAG lookup and dressing it up.</p>
+  </section>
+
+  <section id="guardrails">
+    <h2>4. Guardrails <span class="tag">Anti-hallucination · Anti-loop</span></h2>
+    <div class="grid2">
+      <div class="card">
+        <strong>Anti agent-loop</strong>
+        <p class="dim"><code>MAX_AGENT_STEPS = 5</code> hard-caps the loop. If the agent hasn't
+        reached an answer in 5 rounds of tool calls, it returns a clear "I wasn't able to reach a
+        grounded answer" message instead of looping forever.</p>
+      </div>
+      <div class="card">
+        <strong>No irreversible actions</strong>
+        <p class="dim">Every tool is read-only, except <code>draft_followup</code>, which is a
+        single bounded generation call. There is nothing the agent can do that isn't trivially
+        reversible (nothing is sent, deleted, or modified by a tool call).</p>
+      </div>
+      <div class="card">
+        <strong>Anti-hallucination (grounding)</strong>
+        <p class="dim">The system prompt requires every claim to be backed by a tool result and
+        explicitly instructs the agent to say "not found" rather than guess. Verified by an
+        adversarial test in the eval script (see below).</p>
+      </div>
+      <div class="card">
+        <strong>No invented deadlines</strong>
+        <p class="dim"><code>find_overdue_action_items</code> only flags items with a real,
+        parseable ISO date. A deadline like <em>"next meeting"</em> is skipped rather than
+        guessed at — the tool would rather under-report than fabricate urgency.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="evaluation">
+    <h2>5. Evaluation <span class="tag">Technical Depth — Named Metrics</span></h2>
+
+    <h3>5.1 Agent layer — LLM-as-judge (RAGAS-style)</h3>
+    <p>There's no fixed reference answer for free-form Q&amp;A, so <code>data/eval/evaluate_agent.py</code>
+      uses Claude itself as a judge, scoring each answer against its own tool-call trace
+      (the ground truth the agent actually had access to):</p>
+    <table>
+      <tr><th>Metric</th><th>What it measures</th><th>Result</th></tr>
+      <tr><td>Faithfulness</td><td>Is every claim in the answer backed by the trace?</td><td><span class="badge met">1.00</span></td></tr>
+      <tr><td>Answer relevancy</td><td>Does the answer address the question asked?</td><td><span class="badge met">1.00</span></td></tr>
+      <tr><td>Latency</td><td>Wall-clock time per question</td><td>~4.5s avg</td></tr>
+      <tr><td>Step-cap compliance</td><td>Stays within <code>MAX_AGENT_STEPS</code></td><td><span class="badge met">100%</span></td></tr>
+      <tr><td>Guardrail test</td><td>Declines an ungrounded question instead of hallucinating</td><td><span class="badge met">Pass</span></td></tr>
+    </table>
+    <p class="dim">Run it yourself: <code>.venv/bin/python data/eval/evaluate_agent.py &lt;project_id&gt;</code></p>
+  </section>
+
+  <section id="business">
+    <h2>6. Business case &amp; value proposition <span class="tag">Business Use Case 20%</span></h2>
+    <p><strong>The problem:</strong> knowledge workers spend hours a week re-reading old meeting
+      notes to answer questions that should be instantly searchable — "did we already agree on
+      this?", "who owns this deliverable, and is it late?". That time is pure overhead: it
+      produces no new decisions, just re-discovery of old ones.</p>
+    <p><strong>The niche:</strong> most meeting tools (Otter, Fireflies, Microsoft Copilot,
+      Zoom's built-in summaries) generate a single-meeting transcript or summary well. Very few
+      let you query <em>across</em> a project's full meeting history with accountability
+      built in (who owes what, what's overdue) — and the ones that do are closed, expensive,
+      enterprise SaaS. SummarAI's differentiation is <strong>cross-meeting project memory +
+      action-item accountability</strong>, running on an open stack (local transcription, your
+      own Claude/Gemini keys, your own Supabase project) — open, private, and far cheaper to run
+      than an enterprise seat license.</p>
+    <p><strong>Quantified value:</strong> if a 5-person team spends even 20 minutes per person
+      per week hunting through old notes for "what did we decide" — that's roughly 1.6 hours of
+      collective time per week, or about 85 hours a year, recovered by a tool that answers the
+      same question in under 5 seconds.</p>
+  </section>
+
+  <section id="rubric">
+    <h2>7. How each rubric criterion is met</h2>
+    <table>
+      <tr><th>Criterion</th><th>Weight</th><th>How we meet it</th></tr>
+      <tr>
+        <td>Business Use Case &amp; Value Proposition</td><td>20%</td>
+        <td>Clear, realistic problem (re-discovery overhead in meeting follow-up); a specific
+        niche (cross-meeting memory + accountability) instead of competing head-on with
+        transcription tools; a quantified time-savings estimate. See §6.</td>
+      </tr>
+      <tr>
+        <td>Technical Depth &amp; Model Architecture</td><td>25%</td>
+        <td>Structured-output prompting for the core pipeline (§2.1); a deliberate single-agent
+        tool-use architecture with a justified rejection of multi-agent design (§3); explicit
+        guardrails against agent loops, irreversible actions, and hallucination (§4); a named
+        LLM-as-judge evaluation suite — faithfulness, relevancy, latency, and a guardrail test
+        for the agent (§5).</td>
+      </tr>
+      <tr>
+        <td>MVP Integration &amp; Frontend UX</td><td>25%</td>
+        <td>One FastAPI backend serving both the API and a single-page frontend; every action
+        (upload, save, ask) is a real fetch call with live results, no mocked or hardcoded
+        responses; the Ask panel shows the agent's tool trace live, so the integration is visibly
+        dynamic, not a static demo.</td>
+      </tr>
+      <tr>
+        <td>Presentation &amp; Team Delivery</td><td>20%</td>
+        <td>Addressed in the separate slide deck and live run-through — not part of this codebase
+        document.</td>
+      </tr>
+      <tr>
+        <td>Live Demo &amp; Time Management</td><td>10%</td>
+        <td>The app runs locally end-to-end (<code>uvicorn src.app:app --reload</code>) and has
+        been exercised live: upload → summary, save to project, multi-step agent Q&amp;A, overdue
+        check, recap drafting, and a correct decline on an out-of-scope question — all verified
+        working before this document was written.</td>
+      </tr>
+    </table>
+  </section>
+
+  <section id="qa">
+    <h2>8. Anticipated Q&amp;A</h2>
+
+    <div class="qa">
+      <div class="q">Why a single agent instead of a multi-agent system?</div>
+      <div class="a">Multi-agent systems add coordination complexity (hand-offs, disagreement
+      between agents, harder-to-predict failure modes) that's disproportionate for this problem —
+      every capability we need is a stateless, boundable operation, so it fits cleanly as a tool
+      one agent calls. It's also far easier to defend and explain live: there's one loop, one
+      trace, one place guardrails live.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">What stops the agent from looping forever or burning unlimited tokens?</div>
+      <div class="a"><code>MAX_AGENT_STEPS = 5</code> in <code>src/app.py</code> hard-caps the
+      loop. If it hits the cap without a final answer, it returns an explicit "couldn't reach a
+      grounded answer" message rather than continuing.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">What stops the agent from hallucinating an answer?</div>
+      <div class="a">The system prompt requires every claim to be grounded in tool output and
+      explicitly tells the agent to decline rather than guess. We verified this with an
+      adversarial test (a question about something never discussed in any meeting) — the agent
+      correctly said it couldn't find anything, judged by an independent LLM-as-judge call in
+      <code>evaluate_agent.py</code>.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why Claude Haiku and not a larger model?</div>
+      <div class="a">Haiku is fast and inexpensive, which matters for an agent that may call
+      itself multiple times per question (each loop iteration is a full model call). The
+      structured-output schema and the tool-calling API do the heavy lifting on reliability, so a
+      smaller model is sufficient for both extraction and tool orchestration.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why Gemini for embeddings instead of an Anthropic embedding model?</div>
+      <div class="a">Anthropic doesn't offer an embeddings API — Claude is chat/completion only.
+      Gemini's <code>embedding-001</code> was chosen because it's free to start and produces
+      1536-dimensional vectors, which we standardised on for the <code>pgvector</code> column.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">What happens if a meeting is saved without an embedding (no Gemini key set
+      at save time)?</div>
+      <div class="a">The save still succeeds — embedding failures are caught and logged, not
+      fatal — but that meeting won't show up in <code>search_meetings</code> until it's
+      back-filled. <code>embed_existing.py</code> finds every row with a null embedding and
+      embeds it after the fact.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">How do you know the frontend-backend integration is real and not mocked?</div>
+      <div class="a">Every panel makes a real <code>fetch</code> call to a FastAPI route backed
+      by Supabase and the Anthropic/Gemini APIs — there's no hardcoded response anywhere in
+      <code>index.html</code>. The visible tool-call trace in the Ask panel is itself evidence:
+      it's the literal sequence of backend function calls made for that specific question.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">What's the weakest part of the system, honestly?</div>
+      <div class="a">The core transcription pipeline has no speaker diarization, so when nobody
+      is named in the transcript, action-item owners are left blank rather than guessed — this
+      caps how many action items can be attributed to a specific person. The agent layer
+      inherits this: if the underlying meeting data doesn't have an owner, no tool can
+      recover one.</div>
+    </div>
+
+    <div class="qa">
+      <div class="q">How would you scale this beyond one team / one Supabase project?</div>
+      <div class="a">The current design uses a single Supabase project shared via anon key — fine
+      for a course MVP, not for multi-tenant production. The next step would be per-organisation
+      auth and row-level security keyed to a real user/session rather than a shared anon key.</div>
+    </div>
+  </section>
+
+  <footer>
+    SummarAI — Generative AI Group Assignment · Antonio · Martí · Bojana · Smaragda · Jo
+  </footer>
+
+</div>
+</body>
+</html>

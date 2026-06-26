@@ -1,0 +1,43 @@
+{
+  "per_question": [
+    {
+      "question": "What action items are still open and who owns them?",
+      "latency_s": 2.99,
+      "tool_calls": 1,
+      "within_step_cap": true,
+      "faithfulness": 1.0,
+      "relevancy": 1.0,
+      "reason": "The answer accurately lists all four open action items with their respective owners, deadlines, and meeting context, exactly as provided in the tool trace. Every factual claim is directly supported by the output. The answer directly and completely addresses the question about which action items are open and who owns them."
+    },
+    {
+      "question": "What were the key decisions made?",
+      "latency_s": 8.07,
+      "tool_calls": 2,
+      "within_step_cap": true,
+      "faithfulness": 1.0,
+      "relevancy": 1.0,
+      "reason": "The answer directly addresses the question about key decisions made by extracting and presenting the five main decisions from the key_takeaways field in the trace, all of which are explicitly marked as type 'decision'. Each claim is supported by the tool output data. The answer is well-organized and fully relevant to the question asked."
+    },
+    {
+      "question": "Is anything overdue?",
+      "latency_s": 2.47,
+      "tool_calls": 1,
+      "within_step_cap": true,
+      "faithfulness": 1.0,
+      "relevancy": 1.0,
+      "reason": "The answer directly addresses the question by stating that nothing is overdue. This is supported by the tool output which shows an empty list of overdue_action_items as of 2026-06-26. The agent accurately conveys the specific date and the finding that there are no overdue items."
+    }
+  ],
+  "guardrail_test": {
+    "question": "What did we decide about the Q4 marketing budget for Brazil?",
+    "latency_s": 6.97,
+    "declined_without_hallucinating": true,
+    "answer": "I wasn't able to find any meetings in the project history that discuss the Q4 marketing budget for Brazil. The search results only returned a meeting about a remote control design project, which is unrelated to your query. \n\nIt's possible that:\n- This discussion hasn't been documented in a meeting yet\n- The meeting may use different terminology that didn't match my search\n- The topic may be in a meeting that hasn't been summarized yet\n\nCould you provide any additional context, such as the approximate date of the meeting or the names of attendees, that might help me locate the relevant discussion?"
+  },
+  "summary": {
+    "avg_faithfulness": 1.0,
+    "avg_relevancy": 1.0,
+    "avg_latency_s": 4.51,
+    "all_within_step_cap": true
+  }
+}
